@@ -1,54 +1,75 @@
 import streamlit as st
 from openai import OpenAI
+from supabase import create_client, Client
 import uuid
-from db_utils import init_db, save_message, load_messages
+from datetime import datetime
+import pandas as pd
 
-st.set_page_config(page_title="Simulateur MCP avec IA", page_icon="🤖")
-st.title("💬 Simulateur MCP avec IA (enregistrement SQLite)")
+# 🔧 Interface
+st.set_page_config(page_title="MCP avec Supabase", page_icon="🤖")
+st.title("💬 Simulateur MCP avec IA et Supabase")
 
-# 🔐 Clé OpenAI
-api_key = st.text_input("🔑 Ta clé OpenAI :", type="password")
+# 🧩 Zone de configuration (barre latérale)
+st.sidebar.header("🔐 Connexion Supabase & OpenAI")
 
-# 🧱 Initialiser la base si besoin
-init_db()
+SUPABASE_URL = st.sidebar.text_input("🌐 URL Supabase", placeholder="https://xyz.supabase.co")
+SUPABASE_KEY = st.sidebar.text_input("🔑 Clé API Supabase", type="password")
 
-# 🧠 Création du client OpenAI
-if api_key:
-    client = OpenAI(api_key=api_key)
+OPENAI_KEY = st.sidebar.text_input("🔑 Clé OpenAI", type="password")
 
-    # 🧑 Message client
-    question = st.text_input("🧑 Message du client :")
+# 🧠 Initialisation Supabase
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    if st.button("Envoyer") and question.strip():
-        try:
-            # 📡 Appel IA
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "Tu es un assistant francophone utile."},
-                    {"role": "user", "content": question}
-                ]
-            )
-            answer = response.choices[0].message.content
+    if OPENAI_KEY:
+        client = OpenAI(api_key=OPENAI_KEY)
 
-            # 💾 Sauvegarde en base SQLite
-            message_id = str(uuid.uuid4())
-            save_message(message_id, "client_web", question, answer, "gpt-3.5-turbo")
+        question = st.text_input("🧑 Message du client MCP :")
 
-            st.success("🟣 Réponse du serveur IA :")
-            st.markdown(f"> {answer}")
+        if st.button("Envoyer") and question.strip():
+            try:
+                # 📡 Appel OpenAI
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "Tu es un assistant francophone utile."},
+                        {"role": "user", "content": question}
+                    ]
+                )
+                answer = response.choices[0].message.content
 
-        except Exception as e:
-            st.error(f"Erreur IA : {str(e)}")
+                # 💾 Insertion Supabase
+                result = supabase.table("messages").insert({
+                    "id": str(uuid.uuid4()),
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "sender": "client_web",
+                    "question": question,
+                    "response": answer,
+                    "model": "gpt-3.5-turbo"
+                }).execute()
 
-# 📜 Historique
-with st.expander("📄 Historique enregistré (base SQLite)", expanded=True):
-    rows = load_messages()
-    if rows:
-        for ts, sender, q, r in rows:
-            st.markdown(f"**🕒 {ts} - {sender}**")
-            st.markdown(f"- **Q :** {q}")
-            st.markdown(f"- **R :** {r}")
-            st.markdown("---")
+                st.success("🟣 Réponse du serveur IA :")
+                st.markdown(f"> {answer}")
+
+            except Exception as e:
+                st.error(f"Erreur IA : {str(e)}")
+
+        # 📜 Historique
+        with st.expander("📄 Historique enregistré dans Supabase", expanded=True):
+            try:
+                rows = supabase.table("messages").select("*").order("timestamp", desc=True).limit(100).execute()
+                data = rows.data
+
+                if data:
+                    df = pd.DataFrame(data)
+                    df = df[["timestamp", "sender", "question", "response"]]
+                    st.dataframe(df, use_container_width=True)
+                else:
+                    st.info("Aucun message enregistré.")
+            except Exception as e:
+                st.error(f"Erreur lors de la récupération : {str(e)}")
+
     else:
-        st.info("Aucun échange encore enregistré.")
+        st.info("🧠 Saisis ta clé OpenAI dans la barre latérale.")
+else:
+    st.info("🔧 Saisis les informations de connexion Supabase dans la barre latérale.")
