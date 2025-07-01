@@ -10,7 +10,7 @@ st.title("💬 Simulateur de serveur MCP avec IA")
 st.markdown("Envoie un message au serveur. Il te répondra comme dans un protocole MCP structuré.")
 
 # 🔐 Clé API OpenAI
-api_key = st.text_input("🔑 Ta clé OpenAI", type="password")
+api_key = st.text_input("🔑 Rentre ta clé OpenAI", type="password")
 
 # 💬 Initialisation de l'historique
 if "history" not in st.session_state:
